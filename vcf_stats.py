@@ -82,7 +82,11 @@ class vcf_parser:
             raise ValueError(msg)
         ref = fields[3]
         alt = fields[4]
-        return (ref, alt)
+        # TODO check the FORMAT field and input to parse_genotype?
+        genotypes = [None]*self.total_fields
+        #for i in range(self.total_fields):
+        #    genotypes[i] = self.parse_genotype(fields[9+i])
+        return (ref, alt, genotypes)
 
 
     def parse_column_heads(self, column_heads_line):
@@ -92,6 +96,12 @@ class vcf_parser:
             raise ValueError("No sample names found in column headers: "+\
                                  column_heads_line)
         return (len(fields), fields[9:])
+
+    def parse_genotype(self, input_string):
+        # assume format GT:*
+        gt_string = re.split(':', input_string).pop(0)
+        # TODO get index for pop() from format string
+        fields = re.split("\D+", gt_string)
             
 
 # end of vcf_parser
