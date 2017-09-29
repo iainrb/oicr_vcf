@@ -13,3 +13,11 @@ Questions
 - JSON format: is this reference->alternate->count?
 
 
+Development environment
+
+- Python virtual env
+- Python 3.6.1
+- virtualenv 15.1.0
+
+Test command:
+python vcf_stats.py < data/hg96-hg97.chr21.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf
