@@ -48,8 +48,10 @@ class vcf_parser:
 
         sys.stderr.write("Read "+str(len(header_lines))+\
                              " lines in VCF header\n")
-        if column_heads != None:
-            sys.stderr.write("Read VCF column headers\n")
+        names = self.parse_sample_names(column_heads)
+        sys.stderr.write("Read "+str(len(names))+\
+                             " sample names from VCF column headers: ")
+        sys.stderr.write(str(names)+"\n")
 
         # next line will be start of VCF body
 
@@ -66,6 +68,13 @@ class vcf_parser:
                 #stats = update_stats(fields)
         sys.stderr.write("Read "+str(line_count)+" lines in VCF body\n")
         return stats
+
+    def parse_sample_names(self, column_heads_line):
+        fields = re.split("\s+", column_heads_line.strip())
+        if len(fields) < 10:
+            raise ValueError("No sample names found in column headers: "+\
+                                 column_heads_line)
+        return fields[9:]
             
 
 # end of vcf_parser
