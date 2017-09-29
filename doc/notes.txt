@@ -1,0 +1,15 @@
+
+TODO
+
+- Read VCF file in chunks
+- Keep running totals of quantities of interest
+- Write in JSON format
+- Use STDIN/STDOUT by default. Also support command line options.
+- Need separate output file for each invididual. Default to individual_name.json, support other options
+
+Questions
+
+- deadline, if any?
+- JSON format: is this reference->alternate->count?
+
+
