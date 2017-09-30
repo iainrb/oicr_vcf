@@ -51,4 +51,4 @@ Each JSON file contains a single hash with the following keys and values:
 - `indel_count`: Number of insertions and deletions found.
 - `sv_count`: Number of structural variants found.
 
-An example output file appears in `doc/example.json`.
+An example output file appears in `data/example.json`.
