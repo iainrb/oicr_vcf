@@ -45,7 +45,7 @@ File names are of the form `${SAMPLE_NAME}.json`.
 Each JSON file contains a single hash with the following keys and values:
 
 - `sample`: The sample name.
-- `snps`: Count of each SNP in the input. Indexed by [reference_base] -> [alternate base]. Both alleles in a heterozygous SNP will be counted; for example AA->GC counts as one A->G, and one A->C. For a heterozygous SNP, only the variant allele is counted, so AA->AC is recorded as one A->C.
+- `snps`: Count of each SNP in the input. Indexed by [reference_base] -> [alternate base].
 - `ti-tv`: The transition-transversion ratio.
 - `variant_count`: Total number of variants found, including SNPs, insertions, deletions, and structural variants. (A heterozygous SNP counts as only one variant.)
 - `indel_count`: Number of insertions and deletions found.
