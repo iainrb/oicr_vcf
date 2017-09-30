@@ -14,25 +14,33 @@ Requirements
 Requires Python 3.x.
 
 
+Installation
+------------
+
+The file `vcf_stats.py` is self-contained and may be copied to any location of the user's choice.
+
+
 Usage
 -----
 
 Run from the Linux command line as follows:
 
-    ./vcf_stats.py input_file.vcf
+    ${INSTALL_DIR}/vcf_stats.py input_file.vcf
+
+where `${INSTALL_DIR}` is the directory containing `vcf_stats.py`.
 
 Alternatively, use a `-` (dash) to read VCF from standard input:
 
-    ./vcf_stats.py - < input_file.vcf
+    ${INSTALL_DIR}/vcf_stats.py - < input_file.vcf
 
 Output is written to the current directory by default. Specify another
 directory with `-o` or `--out`:
 
-    ./vcf_stats.py --out ~/vcf_output input_file.vcf
+    ${INSTALL_DIR}/vcf_stats.py --out ~/vcf_output input_file.vcf
 
 Run with `-h` or `--help` for more information:
 
-    ./vcf_stats.py --help
+    ${INSTALL_DIR}/vcf_stats.py --help
 
 
 Output
