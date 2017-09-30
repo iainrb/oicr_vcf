@@ -48,7 +48,7 @@ def main():
 
 class vcf_stats:
 
-    """Class to read a VCF file and contain statistics and metadata"""
+    """Class to read a VCF file and store statistics and metadata"""
 
     def __init__(self, infile, verbose):
         """Constructor. infile must be a file object; verbose is Boolean"""
@@ -127,6 +127,8 @@ class vcf_stats:
 
     def is_transition(self, ref, alt):
         """Is the given SNP an transition?
+
+        Return status of the given reference and alternate alleles:
         - transition: A->G, G->A, C->T, T->C
         - transversion: A->C, C->A, A->T, T->A, G->T, T->G, G->C, C->G"""
         status = False
@@ -136,8 +138,7 @@ class vcf_stats:
         return status
     
     def parse_stats(self, infile):
-        """Read metadata, header, and body of a VCF file and populate
-        instance variables"""
+        """Read a VCF file and populate instance variables"""
         # read VCF meta lines and header
         meta_lines = []
         header = None
@@ -221,6 +222,8 @@ class vcf_stats:
             
     def parse_genotype(self, input_string, gt_index):
         """Find genotype from a sample field in a VCF file.
+
+        Sample field consists of one or more colon-delimited sub-fields.
         Legal values for the genotype sub-field:
         0,1,. separated by | or /"""
         permitted_gt = ('0', '1', '.')
@@ -295,6 +298,7 @@ class vcf_stats:
 
 class VCFInputError(Exception):
     """Error for badly formed VCF input"""
+
     pass
 
 # end of class vcf_parser
