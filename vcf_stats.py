@@ -5,6 +5,7 @@
 import argparse, re, os, sys, json
 
 def main():
+    """Main method to run the VCF stats program"""
     desc = "Find variant statistics for each sample in a "+\
            "VCF file, and output in JSON format"
     ap = argparse.ArgumentParser(description=desc)
@@ -32,12 +33,12 @@ def main():
     else:
         infile = open(args.infile, 'r')
 
-    parser = vcf_parser(infile, args.verbose)
+    vcf = vcf_stats(infile, args.verbose)
 
     if args.infile != '-':
         infile.close()
     
-    for sample_stats in parser.stats:
+    for sample_stats in vcf.stats:
         sample = sample_stats['sample']
         outpath = os.path.join(args.out, sample+'.json')
         out = open(outpath, 'w')
@@ -45,9 +46,12 @@ def main():
         out.close()
 
 
-class vcf_parser:
+class vcf_stats:
+
+    """Class to read a VCF file and contain statistics and metadata"""
 
     def __init__(self, infile, verbose):
+        """Constructor. infile must be a file object; verbose is Boolean"""
         self.verbose = verbose
         self.buffer_size = 1 * 10**6 # input buffer size, in bytes
         self.total_fields = None
@@ -57,7 +61,7 @@ class vcf_parser:
         self.parse_stats(infile)
 
     def find_gt_index(self, format_string):
-        # find location of genotype, represented by GT in the format column
+        """parse the VCF format field, to find location of the genotype"""
         terms = re.split(':', format_string)
         index = None
         i = 0
@@ -72,7 +76,7 @@ class vcf_parser:
         return index
 
     def init_sample_stats(self, name):
-        # initialise an empty data structure with the sample name
+        """initialise an empty data structure with the sample name"""
         stats = {
             "snps": {
                 "A":  {
@@ -120,8 +124,20 @@ class vcf_parser:
 
         }
         return stats
+
+    def is_transition(self, ref, alt):
+        """Is the given SNP an transition?
+        - transition: A->G, G->A, C->T, T->C
+        - transversion: A->C, C->A, A->T, T->A, G->T, T->G, G->C, C->G"""
+        status = False
+        if (ref=='A' and alt=='G') or (ref=='G' and alt=='A') or \
+           (ref=='C' and alt=='T') or (ref=='T' and alt=='C'):
+            status = True
+        return status
     
     def parse_stats(self, infile):
+        """Read metadata, header, and body of a VCF file and populate
+        instance variables"""
         # read VCF meta lines and header
         meta_lines = []
         header = None
@@ -170,6 +186,7 @@ class vcf_parser:
         return True
 
     def parse_body_line(self, line):
+        """parse a line from the body of a VCF file"""
         fields = re.split("\s+", line.strip())
         if len(fields) != self.total_fields:
             msg = "Unexpected number of fields in VCF body line; expected "+\
@@ -186,7 +203,8 @@ class vcf_parser:
         return (ref, alt, genotypes)
 
     def parse_header(self, column_heads_line):
-        # return total headers, and an array of sample names
+        """Parse the header line of a VCF file.
+        Return total headers, and an array of sample names."""
         fields = re.split("\s+", column_heads_line.strip())
         if len(fields) < 10:
             raise VCFInputError("No sample names found in column headers: "+\
@@ -202,7 +220,9 @@ class vcf_parser:
         return (len(fields), names)
             
     def parse_genotype(self, input_string, gt_index):
-        # legal values: 0,1,. separated by | or /
+        """Find genotype from a sample field in a VCF file.
+        Legal values for the genotype sub-field:
+        0,1,. separated by | or /"""
         permitted_gt = ('0', '1', '.')
         gt_string = re.split(':', input_string)[gt_index]
         genotypes = re.split("[|/]", gt_string)
@@ -215,11 +235,13 @@ class vcf_parser:
         return genotypes
 
     def update_sample_titv(self):
+        """Update transition-transversion ratio for each sample"""
         for i in range(self.total_samples):
             titv_ratio = self.titv(self.stats[i])
             self.stats[i]["ti-tv"] = titv_ratio
     
     def update_stats(self, ref, alt, genotypes):
+        """Update running totals for all samples, for a given VCF line"""
         # classify variant as SNP, insertion, deletion, or structural variant
         ref_len = len(ref)
         alt_len = len(alt)
@@ -254,7 +276,7 @@ class vcf_parser:
             i += 1
 
     def titv(self, sample_stats):
-        # find the ti-tv (transition-transversion) ratio
+        """find the ti-tv (transition-transversion) ratio"""
         ti = 0
         tv = 0
         counts = sample_stats["snps"]
@@ -270,14 +292,6 @@ class vcf_parser:
             titv = 0.0
         return titv
 
-    def is_transition(self, ref, alt):
-        # transition: A->G, G->A, C->T, T->C
-        # transversion: A->C, C->A, A->T, T->A, G->T, T->G, G->C, C->G
-        status = False
-        if (ref=='A' and alt=='G') or (ref=='G' and alt=='A') or \
-           (ref=='C' and alt=='T') or (ref=='T' and alt=='C'):
-            status = True
-        return status
 
 class VCFInputError(Exception):
     """Error for badly formed VCF input"""
@@ -287,3 +301,19 @@ class VCFInputError(Exception):
 
 if __name__ == "__main__":
     main()
+
+"""Author: Iain Bancarz <iainrb _AT_ gmail _DOT_ com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
