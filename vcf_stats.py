@@ -2,43 +2,59 @@
 
 # script to parse VCF files, extract basic stats and write in JSON format
 
-# separate JSON file for each individual
-
-import argparse, re, sys, json
-
+import argparse, re, os, sys, json
 
 def main():
-
-    desc = "Program to find variant statistics for each sample in a "+\
+    desc = "Find variant statistics for each sample in a "+\
            "VCF file, and output in JSON format"
     ap = argparse.ArgumentParser(description=desc)
-
     ap.add_argument('infile',
                     help='Path to input VCF file, or - to read from STDIN')
+    ap.add_argument('-o', '--out', metavar='DIR', default=os.getcwd(),
+                    help='Directory path for JSON output; defaults to '+\
+                    'current working directory. Output filenames are of '+\
+                    'the form: ${SAMPLE_NAME}.json')
     ap.add_argument('-v', '--verbose', action='store_true',
-                    help='print additional information to STDERR')
-        
+                    help='Print additional information to STDERR')
     args = ap.parse_args()
 
+    infile = None
+    if not os.path.exists(args.out):
+        raise ValueError("Output path '"+args.out+"' does not exist")
+    elif not os.path.isdir(args.out):
+        raise ValueError("Output path '"+args.out+"' is not a directory")
     if args.infile == '-':
         infile = sys.stdin
+    elif not os.path.exists(args.infile):
+        raise ValueError("Input path '"+args.infile+"' does not exist")
+    elif not os.path.isfile(args.infile):
+        raise ValueError("Input path '"+args.infile+"' is not a regular file")
     else:
         infile = open(args.infile, 'r')
+
+    parser = vcf_parser(infile, args.verbose)
+
+    if args.infile != '-':
+        infile.close()
     
-    parser = vcf_parser(args.verbose)
-    parser.parse_stats(infile)
     for sample_stats in parser.stats:
-        print(json.dumps(sample_stats, sort_keys=True, indent=4))
+        sample = sample_stats['sample']
+        outpath = os.path.join(args.out, sample+'.json')
+        out = open(outpath, 'w')
+        out.write(json.dumps(sample_stats, sort_keys=True, indent=4))
+        out.close()
+
 
 class vcf_parser:
 
-    def __init__(self, verbose):
+    def __init__(self, infile, verbose):
         self.verbose = verbose
         self.buffer_size = 1 * 10**6 # input buffer size, in bytes
         self.total_fields = None
         self.total_samples = None
         self.sample_names = []
         self.stats = []
+        self.parse_stats(infile)
 
     def find_gt_index(self, format_string):
         # find location of genotype, represented by GT in the format column
@@ -51,7 +67,7 @@ class vcf_parser:
                 break
             i += 1
         if index == None:
-            raise ValueError("Cannot find location of GT in format: "+\
+            raise VCFInputError("Cannot find location of GT in format: "+\
                              format_string)
         return index
 
@@ -106,20 +122,15 @@ class vcf_parser:
         return stats
     
     def parse_stats(self, infile):
-
-        # want to read header (as a whole) and body (in chunks)
-        # need stats for each individual
-
         # read VCF meta lines and header
         meta_lines = []
         header = None
-
         while True:
             # read header lines one at a time
             line = infile.readline()
             if line == '':
                 msg = "Reached end of file without finding end of VCF header"
-                raise ValueError(msg)
+                raise VCFInputError(msg)
             if re.match('##', line):
                 meta_lines.append(line)
             elif re.match('#CHROM', line):
@@ -128,26 +139,17 @@ class vcf_parser:
             else:
                 msg = "Unexpected line in VCF header; line "+\
                     "does not start with '##' or '#CHROM': "+line
-                raise ValueError(msg)
-
+                raise VCFInputError(msg)
         (self.total_fields, self.sample_names) = self.parse_header(header)
         self.total_samples = len(self.sample_names)
-        
         for i in range(self.total_samples):
             sample_stats = self.init_sample_stats(self.sample_names[i])
             self.stats.append(sample_stats)
-            
         if self.verbose:
             sys.stderr.write("Read "+str(len(meta_lines))+\
                              " lines in VCF metadata\n")
             sys.stderr.write("Read "+str(self.total_samples)+\
-                             " sample names from VCF header: ")
-            sys.stderr.write(str(self.sample_names)+"\n")
-
-        # next line will be start of VCF body
-
-        # TODO warn when input exceeds eg. 1 TB?
-    
+                             " sample names from VCF header\n")
         # read VCF body in chunks
         line_count = 0
         chunk_count = 0
@@ -173,7 +175,7 @@ class vcf_parser:
             msg = "Unexpected number of fields in VCF body line; expected "+\
                 str(self.total_fields)+", found "+str(len(fields))+\
                 " in: "+str(line)
-            raise ValueError(msg)
+            raise VCFInputError(msg)
         ref = fields[3]
         alt = fields[4]
         gt_index = self.find_gt_index(fields[8])
@@ -187,9 +189,17 @@ class vcf_parser:
         # return total headers, and an array of sample names
         fields = re.split("\s+", column_heads_line.strip())
         if len(fields) < 10:
-            raise ValueError("No sample names found in column headers: "+\
+            raise VCFInputError("No sample names found in column headers: "+\
                                  column_heads_line)
-        return (len(fields), fields[9:])
+        names = fields[9:]
+        name_set = set()
+        for name in names:
+            if name in name_set:
+                raise VCFInputError("Sample name '"+name+\
+                                    "' appears more than once in VCF header")
+            else:
+                name_set.add(name)
+        return (len(fields), names)
             
     def parse_genotype(self, input_string, gt_index):
         # legal values: 0,1,. separated by | or /
@@ -197,11 +207,11 @@ class vcf_parser:
         gt_string = re.split(':', input_string)[gt_index]
         genotypes = re.split("[|/]", gt_string)
         if len(genotypes) >= 3:
-            raise ValueError("Polyploid genotypes not supported")
+            raise VCFInputError("Polyploid genotypes not supported")
         for gt in genotypes:
             if gt not in permitted_gt:
-                raise ValueError("Illegal genotype character '"+gt+\
-                                 "', not in: "+str(permitted_gt))
+                raise VCFInputError("Illegal genotype character '"+gt+\
+                                    "', not in: "+str(permitted_gt))
         return genotypes
 
     def update_sample_titv(self):
@@ -269,7 +279,9 @@ class vcf_parser:
             status = True
         return status
 
-
+class VCFInputError(Exception):
+    """Error for badly formed VCF input"""
+    pass
 
 # end of class vcf_parser
 
