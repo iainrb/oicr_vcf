@@ -4,21 +4,36 @@
 
 # separate JSON file for each individual
 
-import re, sys, json
+import argparse, re, sys, json
 
 
 def main():
 
-    parser = vcf_parser()
-    parser.parse_stats(sys.stdin)
+    desc = "Program to find variant statistics for each sample in a "+\
+           "VCF file, and output in JSON format"
+    ap = argparse.ArgumentParser(description=desc)
+
+    ap.add_argument('infile',
+                    help='Path to input VCF file, or - to read from STDIN')
+    ap.add_argument('-v', '--verbose', action='store_true',
+                    help='print additional information to STDERR')
+        
+    args = ap.parse_args()
+
+    if args.infile == '-':
+        infile = sys.stdin
+    else:
+        infile = open(args.infile, 'r')
+    
+    parser = vcf_parser(args.verbose)
+    parser.parse_stats(infile)
     for sample_stats in parser.stats:
         print(json.dumps(sample_stats, sort_keys=True, indent=4))
 
 class vcf_parser:
 
-
-    def __init__(self):
-        self.verbose = True
+    def __init__(self, verbose):
+        self.verbose = verbose
         self.buffer_size = 1 * 10**6 # input buffer size, in bytes
         self.total_fields = None
         self.total_samples = None
