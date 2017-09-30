@@ -50,3 +50,5 @@ Each JSON file contains a single hash with the following keys and values:
 - `variant_count`: Total number of variants found, including SNPs, insertions, deletions, and structural variants. (A heterozygous SNP counts as only one variant.)
 - `indel_count`: Number of insertions and deletions found.
 - `sv_count`: Number of structural variants found.
+
+An example output file appears in `doc/example.json`.
