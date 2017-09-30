@@ -26,9 +26,9 @@ class vcf_parser:
         # need stats for each individual
         stats = {}
 
-        # read VCF header
-        header_lines = []
-        column_heads = None
+        # read VCF meta lines and header
+        meta_lines = []
+        header = None
 
         while True:
             # read header lines one at a time
@@ -37,21 +37,21 @@ class vcf_parser:
                 msg = "Reached end of file without finding end of VCF header"
                 raise ValueError(msg)
             if re.match('##', line):
-                header_lines.append(line)
+                meta_lines.append(line)
             elif re.match('#CHROM', line):
-                column_heads = line
+                header = line
                 break
             else:
                 msg = "Unexpected line in VCF header; line "+\
                     "does not start with '##' or '#CHROM': "+line
                 raise ValueError(msg)
 
-        sys.stderr.write("Read "+str(len(header_lines))+\
-                             " lines in VCF header\n")
-        (total, names) = self.parse_column_heads(column_heads)
+        sys.stderr.write("Read "+str(len(meta_lines))+\
+                             " lines in VCF metadata\n")
+        (total, names) = self.parse_header(header)
         self.total_fields = total
         sys.stderr.write("Read "+str(len(names))+\
-                             " sample names from VCF column headers: ")
+                             " sample names from VCF header: ")
         sys.stderr.write(str(names)+"\n")
 
         # next line will be start of VCF body
@@ -89,7 +89,7 @@ class vcf_parser:
         return (ref, alt, genotypes)
 
 
-    def parse_column_heads(self, column_heads_line):
+    def parse_header(self, column_heads_line):
         # return total headers, and an array of sample names
         fields = re.split("\s+", column_heads_line.strip())
         if len(fields) < 10:
