@@ -41,6 +41,7 @@ class vcf_parser:
         return index
 
     def init_sample_stats(self, name):
+        # initialise an empty data structure with the sample name
         stats = {
             "snps": {
                 "A":  {
@@ -146,6 +147,9 @@ class vcf_parser:
         if self.verbose:
             sys.stderr.write("Read "+str(line_count)+" lines from VCF body")
             sys.stderr.write(" in "+str(chunk_count)+" chunk(s).\n")
+
+        # update with transition/transversion ratios
+        self.update_sample_titv()        
         return True
 
     def parse_body_line(self, line):
@@ -178,15 +182,19 @@ class vcf_parser:
         gt_string = re.split(':', input_string)[gt_index]
         genotypes = re.split("[|/]", gt_string)
         if len(genotypes) >= 3:
-            raise ValueError("Triploid and higher genotypes not supported")
+            raise ValueError("Polyploid genotypes not supported")
         for gt in genotypes:
             if gt not in permitted_gt:
                 raise ValueError("Illegal genotype character '"+gt+\
                                  "', not in: "+str(permitted_gt))
         return genotypes
 
+    def update_sample_titv(self):
+        for i in range(self.total_samples):
+            titv_ratio = self.titv(self.stats[i])
+            self.stats[i]["ti-tv"] = titv_ratio
+    
     def update_stats(self, ref, alt, genotypes):
-
         # classify variant as SNP, insertion, deletion, or structural variant
         ref_len = len(ref)
         alt_len = len(alt)
@@ -201,17 +209,52 @@ class vcf_parser:
             vartype = 3 # structural variant
         i = 0
         for gt in genotypes:
+            is_variant = False
             for allele_value in gt:
                 # ignore '0' for reference, or '.' for no call
-                # TODO should we count no calls?
                 if allele_value != '1':
                     continue
-                elif vartype == 0: # SNP
+                else:
+                    is_variant = True
+                if vartype == 0: # SNP
                     self.stats[i]["snps"][ref][alt] += 1
-                    self.stats[i]["variant_count"] += 1
+            # variant may be homozygous or heterozygous
+            # each type is counted only once in variant total
+            if is_variant:
+                self.stats[i]["variant_count"] += 1
+                if vartype == 1 or vartype == 2:
+                     self.stats[i]["indel_count"] += 1
+                elif vartype == 3:
+                     self.stats[i]["sv_count"] += 1
             i += 1
 
-            
+    def titv(self, sample_stats):
+        # find the ti-tv (transition-transversion) ratio
+        ti = 0
+        tv = 0
+        counts = sample_stats["snps"]
+        bases = ('A', 'C', 'G', 'T')
+        for ref in bases:
+            for alt in bases:
+                if self.is_transition(ref, alt): ti += counts[ref][alt]
+                else: tv += counts[ref][alt]
+        titv = None
+        try:
+            titv = float(ti) / tv
+        except ZeroDivisionError:
+            titv = 0.0
+        return titv
+
+    def is_transition(self, ref, alt):
+        # transition: A->G, G->A, C->T, T->C
+        # transversion: A->C, C->A, A->T, T->A, G->T, T->G, G->C, C->G
+        status = False
+        if (ref=='A' and alt=='G') or (ref=='G' and alt=='A') or \
+           (ref=='C' and alt=='T') or (ref=='T' and alt=='C'):
+            status = True
+        return status
+
+
 
 # end of class vcf_parser
 
