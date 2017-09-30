@@ -45,6 +45,9 @@ def main():
         out.write(json.dumps(sample_stats, sort_keys=True, indent=4))
         out.close()
 
+    if args.verbose:
+        sys.stderr.write("Wrote JSON output to: "+args.out+"\n")
+
 
 class vcf_stats:
 
@@ -53,7 +56,7 @@ class vcf_stats:
     def __init__(self, infile, verbose):
         """Constructor. infile must be a file object; verbose is Boolean"""
         self.verbose = verbose
-        self.buffer_size = 1 * 10**6 # input buffer size, in bytes
+        self.buffer_size = 10 * 10**6 # input buffer size, in bytes
         self.total_fields = None
         self.total_samples = None
         self.sample_names = []
@@ -183,7 +186,7 @@ class vcf_stats:
             sys.stderr.write(" in "+str(chunk_count)+" chunk(s).\n")
 
         # update with transition/transversion ratios
-        self.update_sample_titv()        
+        self.update_sample_titv()     
         return True
 
     def parse_body_line(self, line):
