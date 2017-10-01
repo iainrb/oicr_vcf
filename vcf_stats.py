@@ -2,7 +2,7 @@
 
 # script to parse VCF files, extract basic stats and write in JSON format
 
-import argparse, re, os, sys, json
+import argparse, math, os, re, sys, json
 
 def main():
     """Main method to run the VCF stats program"""
@@ -37,6 +37,8 @@ def main():
 
     if args.infile != '-':
         infile.close()
+
+    print(str(vcf.ethnicity_stats))
     
     for sample_stats in vcf.stats:
         sample = sample_stats['sample']
@@ -68,6 +70,7 @@ class vcf_stats:
         self.total_samples = None
         self.sample_names = []
         self.stats = []
+        self.ethnicity_stats = []
         self.parse_stats(infile)
 
     def find_gt_index(self, format_string):
@@ -85,6 +88,20 @@ class vcf_stats:
                              format_string)
         return index
 
+    def init_ethnicity_stats(self, name):
+        """initialise an empty data structure with the sample name
+
+        dictionary contains log-likelihood running totals by ethnicity
+        """
+        stats = {
+            self.SAMPLE_KEY: name,
+            'AMR_LL': 0.0,
+            'ASN_LL': 0.0,
+            'AFR_LL': 0.0,
+            'EUR_LL': 0.0,
+        }
+        return stats
+    
     def init_sample_stats(self, name):
         """initialise an empty data structure with the sample name"""
         stats = {
@@ -171,6 +188,8 @@ class vcf_stats:
         for i in range(self.total_samples):
             sample_stats = self.init_sample_stats(self.sample_names[i])
             self.stats.append(sample_stats)
+            eth_stats = self.init_ethnicity_stats(self.sample_names[i])
+            self.ethnicity_stats.append(eth_stats)
         if self.verbose:
             sys.stderr.write("Read "+str(len(meta_lines))+\
                              " lines in VCF metadata\n")
@@ -185,8 +204,8 @@ class vcf_stats:
             chunk_count += 1
             for line in lines:
                 line_count += 1
-                (ref, alts, genotypes) = self.parse_body_line(line)
-                self.update_stats(ref, alts, genotypes)
+                (ref, alts, genotypes, info) = self.parse_body_line(line)
+                self.update_stats(ref, alts, genotypes, info)
         if self.verbose:
             sys.stderr.write("Read "+str(line_count)+" lines from VCF body")
             sys.stderr.write(" in "+str(chunk_count)+" chunk(s).\n")
@@ -198,7 +217,9 @@ class vcf_stats:
     def parse_body_line(self, line):
         """parse a line from the body of a VCF file
 
-        returns: reference, one or more alternates, genotypes"""
+        returns: reference, one or more alternates, genotypes, info
+        info is a dictionary of ethnic allele frequences from the INFO field
+        """
         fields = re.split("\s+", line.strip())
         if len(fields) != self.total_fields:
             msg = "Unexpected number of fields in VCF body line; expected "+\
@@ -207,11 +228,12 @@ class vcf_stats:
             raise VCFInputError(msg)
         ref = fields[3]
         alts = re.split(',', fields[4])
+        info = self.parse_info(fields[7])
         gt_index = self.find_gt_index(fields[8])
         genotypes = [None]*self.total_samples
         for i in range(self.total_samples):
             genotypes[i] = self.parse_genotype(fields[9+i], gt_index)
-        return (ref, alts, genotypes)
+        return (ref, alts, genotypes, info)
 
     def parse_header(self, column_heads_line):
         """Parse the header line of a VCF file.
@@ -251,14 +273,52 @@ class vcf_stats:
                                     "', not an integer or '.'")
         return genotypes
 
+    def parse_info(self, info_string):
+        """Parse the INFO field in VCF body; get allele frequencies"""
+        fields = re.split(';', info_string)
+        af_keys = ('AMR_AF', 'ASN_AF', 'AFR_AF', 'EUR_AF')
+        info = {}
+        for field in fields:
+            (key, value) = re.split('=', field)
+            if key in af_keys:
+                info[key] = float(value)
+        return info
+    
     def update_sample_titv(self):
         """Update transition-transversion ratio for each sample"""
         for i in range(self.total_samples):
             titv_ratio = self.titv(self.stats[i])
             self.stats[i][self.TI_TV_KEY] = titv_ratio
-    
-    def update_stats(self, ref, alts, genotypes):
-        """Update running totals for all samples, for a given VCF line"""
+
+    def update_ethnicity(self, sample_index, is_variant, info):
+        """Update running totals for log-likelihood of ethnicity"""
+        key_map = {
+            'AMR_AF': 'AMR_LL',
+            'ASN_AF': 'ASN_LL',
+            'AFR_AF': 'AFR_LL',
+            'EUR_AF': 'EUR_LL'
+        }
+        for key in info.keys():
+            #sys.stderr.write(str(sample_index)+"\t"+key+"\t"+str(info[key])+"\n")
+            # correction for very high/low allele frequency
+            # VCF INFO field is only precise to 2 d.p.
+            # so 1.0 has the same representation as 0.995
+            af = info[key]
+            delta = 0.0001
+            if math.fabs(1.0 - af) < delta: af = 0.995
+            elif math.fabs(af) < delta: af = 0.005
+            
+            if is_variant:
+                loglik = math.log(af) # ln Pr(variant|ethnicity)
+            else:
+                loglik = math.log(1.0 - af) # ln Pr(no variant|ethnicity)
+            self.ethnicity_stats[sample_index][key_map[key]] += loglik
+            
+    def update_stats(self, ref, alts, genotypes, info):
+        """Update running totals for all samples, for a given VCF line
+
+        Also updates ethnicity log-likelihood totals, using 'info' argument
+        """
         # classify alterantes as SNP, indel, or structural variant
         ref_len = len(ref)
         alt_types = []
@@ -282,16 +342,20 @@ class vcf_stats:
             variant_index = None
             for allele_value in gt: # for each chromosome
                 # ignore '0' for reference, or '.' for no call
-                if allele_value == '0' or allele_value == '.':
-                    continue
-                alt_index = int(allele_value) - 1
-                if variant_index != None and variant_index != alt_index:
-                    msg = "Non-matching variant types not supported"
-                    raise VCFInputError(msg)
-                variant_index = alt_index
-                if alt_types[alt_index] == 0: # SNP
-                    alt = alts[alt_index]
-                    self.stats[i][self.SNPS_KEY][ref][alt] += 1
+                if allele_value == '.':
+                    pass
+                elif allele_value == '0':
+                    self.update_ethnicity(i, False, info)
+                else:
+                    self.update_ethnicity(i, True, info)
+                    alt_index = int(allele_value) - 1
+                    if variant_index != None and variant_index != alt_index:
+                        msg = "Non-matching variant types not supported"
+                        raise VCFInputError(msg)
+                    variant_index = alt_index
+                    if alt_types[alt_index] == 0: # SNP
+                        alt = alts[alt_index]
+                        self.stats[i][self.SNPS_KEY][ref][alt] += 1
             # each variant is counted only once in the variant total
             # eg. homozygous SNP (two alternate alleles) is not double-counted
             if variant_index != None:
