@@ -179,8 +179,8 @@ class vcf_stats:
             chunk_count += 1
             for line in lines:
                 line_count += 1
-                (ref, alt, genotypes) = self.parse_body_line(line)
-                self.update_stats(ref, alt, genotypes)
+                (ref, alts, genotypes) = self.parse_body_line(line)
+                self.update_stats(ref, alts, genotypes)
         if self.verbose:
             sys.stderr.write("Read "+str(line_count)+" lines from VCF body")
             sys.stderr.write(" in "+str(chunk_count)+" chunk(s).\n")
@@ -190,7 +190,9 @@ class vcf_stats:
         return True
 
     def parse_body_line(self, line):
-        """parse a line from the body of a VCF file"""
+        """parse a line from the body of a VCF file
+
+        returns: reference, one or more alternates, genotypes"""
         fields = re.split("\s+", line.strip())
         if len(fields) != self.total_fields:
             msg = "Unexpected number of fields in VCF body line; expected "+\
@@ -198,13 +200,12 @@ class vcf_stats:
                 " in: "+str(line)
             raise VCFInputError(msg)
         ref = fields[3]
-        alt = fields[4]
+        alts = re.split(',', fields[4])
         gt_index = self.find_gt_index(fields[8])
-        # TODO check the FORMAT field and input to parse_genotype?
         genotypes = [None]*self.total_samples
         for i in range(self.total_samples):
             genotypes[i] = self.parse_genotype(fields[9+i], gt_index)
-        return (ref, alt, genotypes)
+        return (ref, alts, genotypes)
 
     def parse_header(self, column_heads_line):
         """Parse the header line of a VCF file.
@@ -235,9 +236,13 @@ class vcf_stats:
         if len(genotypes) >= 3:
             raise VCFInputError("Polyploid genotypes not supported")
         for gt in genotypes:
-            if gt not in permitted_gt:
-                raise VCFInputError("Illegal genotype character '"+gt+\
-                                    "', not in: "+str(permitted_gt))
+            if re.match('<.*>', gt):
+                raise VCFInputError("ID string for alternate not supported")
+            elif re.search('\[|\]', gt):
+                raise VCFInputError("Breakends for alternate not supported")
+            elif re.search('[^0-9\.]', gt):
+                raise VCFInputError("Illegal genotype character in '"+gt+\
+                                    "', not an integer or '.'")
         return genotypes
 
     def update_sample_titv(self):
@@ -246,34 +251,45 @@ class vcf_stats:
             titv_ratio = self.titv(self.stats[i])
             self.stats[i]["ti-tv"] = titv_ratio
     
-    def update_stats(self, ref, alt, genotypes):
+    def update_stats(self, ref, alts, genotypes):
         """Update running totals for all samples, for a given VCF line"""
-        # classify variant as SNP, insertion, deletion, or structural variant
+        # classify alterantes as SNP, indel, or structural variant
         ref_len = len(ref)
-        alt_len = len(alt)
-        vartype = None
-        if ref_len == 1 and alt_len == 1:
-            vartype = 0 # SNP
-        elif alt_len > ref_len and ref_len == 1:
-            vartype = 1 # insertion
-        elif alt_len < ref_len and alt_len == 1:
-            vartype = 2 # deletion
-        else:
-            vartype = 3 # structural variant
+        alt_types = []
+        for alt in alts:
+            alt_len = len(alt)
+            vartype = None
+            if ref_len == 1 and alt_len == 1:
+                vartype = 0 # SNP
+            elif alt_len > ref_len and ref_len == 1:
+                vartype = 1 # insertion
+            elif alt_len < ref_len and alt_len == 1:
+                vartype = 2 # deletion
+            else:
+                vartype = 3 # structural variant
+            alt_types.append(vartype)
         i = 0
         for gt in genotypes:
-            is_variant = False
-            for allele_value in gt:
+            # find which type of variant is present
+            # does not support multiple variant types in same genotype,
+            # eg. SNP on one chromosome and indel on the other
+            variant_index = None
+            for allele_value in gt: # for each chromosome
                 # ignore '0' for reference, or '.' for no call
-                if allele_value != '1':
+                if allele_value == '0' or allele_value == '.':
                     continue
-                else:
-                    is_variant = True
-                if vartype == 0: # SNP
+                alt_index = int(allele_value) - 1
+                if variant_index != None and variant_index != alt_index:
+                    msg = "Non-matching variant types not supported"
+                    raise VCFInputError(msg)
+                variant_index = alt_index
+                if alt_types[alt_index] == 0: # SNP
+                    alt = alts[alt_index]
                     self.stats[i]["snps"][ref][alt] += 1
-            # variant may be homozygous or heterozygous
-            # each type is counted only once in variant total
-            if is_variant:
+            # each variant is counted only once in the variant total
+            # eg. homozygous SNP (two alternate alleles) is not double-counted
+            if variant_index != None:
+                vartype = alt_types[variant_index]
                 self.stats[i]["variant_count"] += 1
                 if vartype == 1 or vartype == 2:
                      self.stats[i]["indel_count"] += 1
@@ -298,13 +314,14 @@ class vcf_stats:
             titv = 0.0
         return titv
 
+# end of class vcf_parser
 
+    
 class VCFInputError(Exception):
     """Error for badly formed VCF input"""
 
     pass
 
-# end of class vcf_parser
 
 if __name__ == "__main__":
     main()
