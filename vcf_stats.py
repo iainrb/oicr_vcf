@@ -69,6 +69,11 @@ class vcf_stats:
     SV_COUNT_KEY = 'sv_count'
     TI_TV_KEY = 'ti-tv'
     SAMPLE_KEY = 'sample'
+    # ethnicity keys
+    ASN_KEY = 'ASN'
+    AMR_KEY = 'AMR'
+    AFR_KEY = 'AFR'
+    EUR_KEY = 'EUR'
     
     def __init__(self, infile, verbose):
         """Constructor. infile must be a file object; verbose is Boolean"""
@@ -87,7 +92,7 @@ class vcf_stats:
         uses allele frequencies in the INFO field of the VCF file"""
 
         # self.ethnicity_loglik = total of log-likelihood by ethnicity
-        # use the Decimal module for high-precision arithmetic, as with
+        # use the decimal module for high-precision arithmetic, as with
         # a large number of variants, the log-likelihood is a negative
         # number of large magnitude
 
@@ -104,36 +109,29 @@ class vcf_stats:
         # * Pr(H|D) = (Pr(D|H)Pr(H)) / Pr(D)
 
         prior = {
-            'ASN': 0.25,
-            'AMR': 0.25,
-            'AFR': 0.25,
-            'EUR': 0.25
-        }
-        key_map = {
-            'ASN_LL': 'ASN',
-            'AMR_LL': 'AMR',
-            'AFR_LL': 'AFR',
-            'EUR_LL': 'EUR',
+            self.ASN_KEY: 0.25,
+            self.AMR_KEY: 0.25,
+            self.AFR_KEY: 0.25,
+            self.EUR_KEY: 0.25
         }
         output = []
         for i in range(self.total_samples):
             sample_output = {
-                'ASN': None,
-                'AMR': None,
-                'AFR': None,
-                'EUR': None
+                self.ASN_KEY: None,
+                self.AMR_KEY: None,
+                self.AFR_KEY: None,
+                self.EUR_KEY: None
             }
             eth_loglik = self.ethnicity_loglik[i]
             e = Decimal(math.exp(1))
             for key in eth_loglik.keys():
                 if key == self.SAMPLE_KEY: continue
-                out_key = key_map[key]
                 pr_d_h = e**Decimal(eth_loglik[key])
-                pr_h = Decimal(prior[out_key])
+                pr_h = Decimal(prior[key])
                 pr_h_d = pr_d_h * pr_h
                 msg = "\t"+str(pr_d_h)+"\n"
                 sys.stderr.write(msg)
-                sample_output[out_key] = pr_h_d
+                sample_output[key] = pr_h_d
             # normalize probabilities so they sum to 1
             total = sum(sample_output.values())
             for key in sample_output.keys():
@@ -141,6 +139,7 @@ class vcf_stats:
                     normalized = sample_output[key] / total
                     sample_output[key] = float(normalized)
                 except ZeroDivisionError:
+                    # eg. INFO field had no ethnic allele frequencies
                     sample_output[key] = 0.0
             sample_output[self.SAMPLE_KEY] = self.sample_names[i]
             output.append(sample_output)
@@ -168,10 +167,10 @@ class vcf_stats:
         """
         stats = {
             self.SAMPLE_KEY: name,
-            'AMR_LL': 0.0,
-            'ASN_LL': 0.0,
-            'AFR_LL': 0.0,
-            'EUR_LL': 0.0,
+            self.AMR_KEY: 0.0,
+            self.ASN_KEY: 0.0,
+            self.AFR_KEY: 0.0,
+            self.EUR_KEY: 0.0
         }
         return stats
     
@@ -366,10 +365,10 @@ class vcf_stats:
     def update_ethnicity(self, sample_index, is_variant, info):
         """Update running totals for log-likelihood of ethnicity"""
         key_map = {
-            'AMR_AF': 'AMR_LL',
-            'ASN_AF': 'ASN_LL',
-            'AFR_AF': 'AFR_LL',
-            'EUR_AF': 'EUR_LL'
+            'AMR_AF': self.AMR_KEY,
+            'ASN_AF': self.ASN_KEY,
+            'AFR_AF': self.AFR_KEY,
+            'EUR_AF': self.EUR_KEY,
         }
         for key in info.keys():
             # correction for very high/low allele frequency
