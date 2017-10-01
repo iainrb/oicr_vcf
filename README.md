@@ -25,22 +25,26 @@ Usage
 
 Run from the Linux command line as follows:
 
-    ${INSTALL_DIR}/vcf_stats.py input_file.vcf
-
-where `${INSTALL_DIR}` is the directory containing `vcf_stats.py`.
+    ./vcf_stats.py input_file.vcf
 
 Alternatively, use a `-` (dash) to read VCF from standard input:
 
-    ${INSTALL_DIR}/vcf_stats.py - < input_file.vcf
+    ./vcf_stats.py - < input_file.vcf
 
 Output is written to the current directory by default. Specify another
 directory with `-o` or `--out`:
 
-    ${INSTALL_DIR}/vcf_stats.py --out ~/vcf_output input_file.vcf
+    ./vcf_stats.py --out ~/vcf_output input_file.vcf
+
+The optional `-e` or `--ethnicity` argument is a JSON path for output of estimated probabilities of sample ethnicity:
+
+    ./vcf_stats.py --ethnicity ethnicity.json input_file.vcf
+
+See the file `doc/ethnicity.md` for details of the ethnicity estimation.
 
 Run with `-h` or `--help` for more information:
 
-    ${INSTALL_DIR}/vcf_stats.py --help
+    ./vcf_stats.py --help
 
 
 Output
