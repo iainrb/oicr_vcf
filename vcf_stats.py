@@ -53,6 +53,13 @@ class vcf_stats:
 
     """Class to read a VCF file and store statistics and metadata"""
 
+    SNPS_KEY = 'snps'
+    VARIANT_COUNT_KEY = 'variant_count'
+    INDEL_COUNT_KEY = 'indel_count'
+    SV_COUNT_KEY = 'sv_count'
+    TI_TV_KEY = 'ti-tv'
+    SAMPLE_KEY = 'sample'
+    
     def __init__(self, infile, verbose):
         """Constructor. infile must be a file object; verbose is Boolean"""
         self.verbose = verbose
@@ -81,7 +88,7 @@ class vcf_stats:
     def init_sample_stats(self, name):
         """initialise an empty data structure with the sample name"""
         stats = {
-            "snps": {
+            self.SNPS_KEY: {
                 "A":  {
                     "A": 0,
                     "C": 0,
@@ -119,12 +126,11 @@ class vcf_stats:
                     "N": 0
                 },
             },
-            "sample" : name,
-            "ti-tv": 0.0,
-            "variant_count": 0,
-            "indel_count": 0,
-            "sv_count": 0
-
+            self.SAMPLE_KEY: name,
+            self.TI_TV_KEY: 0.0,
+            self.VARIANT_COUNT_KEY: 0,
+            self.INDEL_COUNT_KEY: 0,
+            self.SV_COUNT_KEY: 0
         }
         return stats
 
@@ -249,7 +255,7 @@ class vcf_stats:
         """Update transition-transversion ratio for each sample"""
         for i in range(self.total_samples):
             titv_ratio = self.titv(self.stats[i])
-            self.stats[i]["ti-tv"] = titv_ratio
+            self.stats[i][self.TI_TV_KEY] = titv_ratio
     
     def update_stats(self, ref, alts, genotypes):
         """Update running totals for all samples, for a given VCF line"""
@@ -285,23 +291,23 @@ class vcf_stats:
                 variant_index = alt_index
                 if alt_types[alt_index] == 0: # SNP
                     alt = alts[alt_index]
-                    self.stats[i]["snps"][ref][alt] += 1
+                    self.stats[i][self.SNPS_KEY][ref][alt] += 1
             # each variant is counted only once in the variant total
             # eg. homozygous SNP (two alternate alleles) is not double-counted
             if variant_index != None:
                 vartype = alt_types[variant_index]
-                self.stats[i]["variant_count"] += 1
+                self.stats[i][self.VARIANT_COUNT_KEY] += 1
                 if vartype == 1 or vartype == 2:
-                     self.stats[i]["indel_count"] += 1
+                     self.stats[i][self.INDEL_COUNT_KEY] += 1
                 elif vartype == 3:
-                     self.stats[i]["sv_count"] += 1
+                     self.stats[i][self.SV_COUNT_KEY] += 1
             i += 1
 
     def titv(self, sample_stats):
         """find the ti-tv (transition-transversion) ratio"""
         ti = 0
         tv = 0
-        counts = sample_stats["snps"]
+        counts = sample_stats[self.SNPS_KEY]
         bases = ('A', 'C', 'G', 'T')
         for ref in bases:
             for alt in bases:
