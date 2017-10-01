@@ -1,27 +1,14 @@
 #! /usr/bin/env python3
 
 # script to parse VCF files, extract basic stats and write in JSON format
+# optionally, estimate probability of ethnic groups for each sample
 
 import argparse, math, os, re, sys, json
 from decimal import Decimal
 
 def main():
     """Main method to run the VCF stats program"""
-    desc = "Find variant statistics for each sample in a "+\
-           "VCF file, and output in JSON format"
-    ap = argparse.ArgumentParser(description=desc)
-    ap.add_argument('infile',
-                    help='Path to input VCF file, or - to read from STDIN')
-    ap.add_argument('-o', '--out', metavar='DIR', default=os.getcwd(),
-                    help='Directory path for JSON output; defaults to '+\
-                    'current working directory. Output filenames are of '+\
-                    'the form: ${SAMPLE_NAME}.json')
-    ap.add_argument('-e', '--ethnicity', help='Path for output JSON file '+\
-                    'containing estimated likelihood of '+\
-                    'ethnicities. Optional.')
-    ap.add_argument('-v', '--verbose', action='store_true',
-                    help='Print additional information to STDERR')
-    args = ap.parse_args()
+    args = construct_argument_parser().parse_args()
 
     infile = None
     if not os.path.exists(args.out):
@@ -37,10 +24,10 @@ def main():
     else:
         infile = open(args.infile, 'r')
 
-    if args.ethnicity: find_ethnicity = True
-    else: find_ethnicity = False
+    if args.ethnicity: enable_ethnicity = True
+    else: enable_ethnicity = False
 
-    vcf = vcf_stats(infile, args.verbose, find_ethnicity)
+    vcf = vcf_stats(infile, args.verbose, enable_ethnicity)
 
     if args.infile != '-':
         infile.close()
@@ -62,6 +49,24 @@ def main():
             msg = "Wrote ethnicity output to: "+args.ethnicity+"\n"
             sys.stderr.write(msg)
 
+def construct_argument_parser():
+    """ Construct an ArgumentParser object with appropriate options"""
+    desc = "Find variant statistics for each sample in a "+\
+           "VCF file, and output in JSON format"
+    ap = argparse.ArgumentParser(description=desc)
+    ap.add_argument('infile',
+                    help='Path to input VCF file, or - to read from STDIN')
+    ap.add_argument('-o', '--out', metavar='DIR', default=os.getcwd(),
+                    help='Directory path for JSON output; defaults to '+\
+                    'current working directory. Output filenames are of '+\
+                    'the form: ${SAMPLE_NAME}.json')
+    ap.add_argument('-e', '--ethnicity', help='Path for output JSON file '+\
+                    'containing estimated likelihood of '+\
+                    'ethnicities. Optional.')
+    ap.add_argument('-v', '--verbose', action='store_true',
+                    help='Print additional information to STDERR')
+    return ap
+    
 class vcf_stats:
 
     """Class to read a VCF file and store statistics and metadata"""
@@ -81,7 +86,11 @@ class vcf_stats:
     def __init__(self, infile, verbose, enable_ethnicity):
         """Constructor.
 
-        infile must be a file object; verbose & find_ethnicity are Boolean"""
+        infile must be a file object; verbose & enable_ethnicity are Boolean.
+        Computing log-likelihoods to evaluate the ethnicity requires 
+        significant additional runtime; it can be disabled by setting
+        enable_ethnicity to False.
+        """
         self.verbose = verbose
         self.enable_ethnicity = enable_ethnicity
         self.buffer_size = 50 * 10**6 # input buffer size, in bytes
@@ -290,7 +299,7 @@ class vcf_stats:
         if self.verbose:
             sys.stderr.write("Read "+str(line_count)+" lines from VCF body"+\
                              " in "+str(block_count)+" block(s) of maximum "+\
-                             str(self.buffer_size)+" bytes.\n")
+                             str(self.buffer_size)+" bytes\n")
         # update with transition/transversion ratios
         self.update_sample_titv()     
         return True
