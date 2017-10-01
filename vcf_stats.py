@@ -87,11 +87,21 @@ class vcf_stats:
         uses allele frequencies in the INFO field of the VCF file"""
 
         # self.ethnicity_loglik = total of log-likelihood by ethnicity
+        # use the Decimal module for high-precision arithmetic, as with
+        # a large number of variants, the log-likelihood is a negative
+        # number of large magnitude
 
-        # Pr(D|H) = exp(self.ethnicity_loglik(H))
-        # Pr(H) = prior probability of ethnicity H (initially use 0.25)
-        # Pr(D) = normalizing constant
-        # Pr(H|D) = (Pr(D|H)Pr(H)) / Pr(D)
+        # Apply Bayes' rule to find probability of each ethnicity:
+        # H = hypothesis, eg. 'ethnicity is African'
+        # D = data, genotype calls and allele frequencies
+        # We want probability of hypothesis given data, Pr(H|D)
+        #
+        # Bayes' rule:  Pr(H|D) = (Pr(D|H)Pr(H)) / Pr(D)
+        # where:
+        # * Pr(D|H) = exp(self.ethnicity_loglik(H))
+        # * Pr(H) = prior probability of ethnicity H (uniform 0.25)
+        # * Pr(D) = normalizing constant
+        # * Pr(H|D) = (Pr(D|H)Pr(H)) / Pr(D)
 
         prior = {
             'ASN': 0.25,
@@ -114,12 +124,10 @@ class vcf_stats:
                 'EUR': None
             }
             eth_loglik = self.ethnicity_loglik[i]
-            sys.stderr.write(str(eth_loglik)+"\n")
             e = Decimal(math.exp(1))
             for key in eth_loglik.keys():
                 if key == self.SAMPLE_KEY: continue
                 out_key = key_map[key]
-                #pr_d_h = math.exp(eth_loglik[key])
                 pr_d_h = e**Decimal(eth_loglik[key])
                 pr_h = Decimal(prior[out_key])
                 pr_h_d = pr_d_h * pr_h
@@ -364,7 +372,6 @@ class vcf_stats:
             'EUR_AF': 'EUR_LL'
         }
         for key in info.keys():
-            #sys.stderr.write(str(sample_index)+"\t"+key+"\t"+str(info[key])+"\n")
             # correction for very high/low allele frequency
             # VCF INFO field is only precise to 2 d.p.
             # so 1.0 has the same representation as 0.995
