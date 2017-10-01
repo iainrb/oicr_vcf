@@ -3,6 +3,7 @@
 # script to parse VCF files, extract basic stats and write in JSON format
 
 import argparse, math, os, re, sys, json
+from decimal import Decimal
 
 def main():
     """Main method to run the VCF stats program"""
@@ -15,6 +16,9 @@ def main():
                     help='Directory path for JSON output; defaults to '+\
                     'current working directory. Output filenames are of '+\
                     'the form: ${SAMPLE_NAME}.json')
+    ap.add_argument('-e', '--ethnicity', help='Path for output JSON file '+\
+                    'containing estimated likelihood of '+\
+                    'ethnicities. Optional.')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help='Print additional information to STDERR')
     args = ap.parse_args()
@@ -37,8 +41,6 @@ def main():
 
     if args.infile != '-':
         infile.close()
-
-    print(str(vcf.ethnicity_stats))
     
     for sample_stats in vcf.stats:
         sample = sample_stats['sample']
@@ -46,10 +48,16 @@ def main():
         out = open(outpath, 'w')
         out.write(json.dumps(sample_stats, sort_keys=True, indent=4))
         out.close()
-
     if args.verbose:
         sys.stderr.write("Wrote JSON output to: "+args.out+"\n")
-
+    if args.ethnicity:
+        eth_data = vcf.estimate_ethnicity()
+        out = open(args.ethnicity, 'w')
+        out.write(json.dumps(eth_data, sort_keys=True, indent=4))
+        out.close()
+        if args.verbose:
+            msg = "Wrote ethnicity output to: "+args.ethnicity+"\n"
+            sys.stderr.write(msg)
 
 class vcf_stats:
 
@@ -70,9 +78,66 @@ class vcf_stats:
         self.total_samples = None
         self.sample_names = []
         self.stats = []
-        self.ethnicity_stats = []
+        self.ethnicity_loglik = []
         self.parse_stats(infile)
 
+    def estimate_ethnicity(self):
+        """estimate ethnicity of each sample
+
+        uses allele frequencies in the INFO field of the VCF file"""
+
+        # self.ethnicity_loglik = total of log-likelihood by ethnicity
+
+        # Pr(D|H) = exp(self.ethnicity_loglik(H))
+        # Pr(H) = prior probability of ethnicity H (initially use 0.25)
+        # Pr(D) = normalizing constant
+        # Pr(H|D) = (Pr(D|H)Pr(H)) / Pr(D)
+
+        prior = {
+            'ASN': 0.25,
+            'AMR': 0.25,
+            'AFR': 0.25,
+            'EUR': 0.25
+        }
+        key_map = {
+            'ASN_LL': 'ASN',
+            'AMR_LL': 'AMR',
+            'AFR_LL': 'AFR',
+            'EUR_LL': 'EUR',
+        }
+        output = []
+        for i in range(self.total_samples):
+            sample_output = {
+                'ASN': None,
+                'AMR': None,
+                'AFR': None,
+                'EUR': None
+            }
+            eth_loglik = self.ethnicity_loglik[i]
+            sys.stderr.write(str(eth_loglik)+"\n")
+            e = Decimal(math.exp(1))
+            for key in eth_loglik.keys():
+                if key == self.SAMPLE_KEY: continue
+                out_key = key_map[key]
+                #pr_d_h = math.exp(eth_loglik[key])
+                pr_d_h = e**Decimal(eth_loglik[key])
+                pr_h = Decimal(prior[out_key])
+                pr_h_d = pr_d_h * pr_h
+                msg = "\t"+str(pr_d_h)+"\n"
+                sys.stderr.write(msg)
+                sample_output[out_key] = pr_h_d
+            # normalize probabilities so they sum to 1
+            total = sum(sample_output.values())
+            for key in sample_output.keys():
+                try:
+                    normalized = sample_output[key] / total
+                    sample_output[key] = float(normalized)
+                except ZeroDivisionError:
+                    sample_output[key] = 0.0
+            sample_output[self.SAMPLE_KEY] = self.sample_names[i]
+            output.append(sample_output)
+        return output
+        
     def find_gt_index(self, format_string):
         """parse the VCF format field, to find location of the genotype"""
         terms = re.split(':', format_string)
@@ -88,7 +153,7 @@ class vcf_stats:
                              format_string)
         return index
 
-    def init_ethnicity_stats(self, name):
+    def init_ethnicity_loglik(self, name):
         """initialise an empty data structure with the sample name
 
         dictionary contains log-likelihood running totals by ethnicity
@@ -188,8 +253,8 @@ class vcf_stats:
         for i in range(self.total_samples):
             sample_stats = self.init_sample_stats(self.sample_names[i])
             self.stats.append(sample_stats)
-            eth_stats = self.init_ethnicity_stats(self.sample_names[i])
-            self.ethnicity_stats.append(eth_stats)
+            eth_stats = self.init_ethnicity_loglik(self.sample_names[i])
+            self.ethnicity_loglik.append(eth_stats)
         if self.verbose:
             sys.stderr.write("Read "+str(len(meta_lines))+\
                              " lines in VCF metadata\n")
@@ -307,12 +372,12 @@ class vcf_stats:
             delta = 0.0001
             if math.fabs(1.0 - af) < delta: af = 0.995
             elif math.fabs(af) < delta: af = 0.005
-            
+            # update running total for variant or no-variant
             if is_variant:
                 loglik = math.log(af) # ln Pr(variant|ethnicity)
             else:
-                loglik = math.log(1.0 - af) # ln Pr(no variant|ethnicity)
-            self.ethnicity_stats[sample_index][key_map[key]] += loglik
+                loglik = math.log(1.0 - af) # ln Pr(no-variant|ethnicity)
+            self.ethnicity_loglik[sample_index][key_map[key]] += loglik
             
     def update_stats(self, ref, alts, genotypes, info):
         """Update running totals for all samples, for a given VCF line
