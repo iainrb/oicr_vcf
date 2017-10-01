@@ -32,8 +32,8 @@ def main():
     if args.infile != '-':
         infile.close()
     
-    for sample_stats in vcf.stats:
-        sample = sample_stats['sample']
+    for sample_stats in vcf.get_sample_stats():
+        sample = vcf.get_sample_name(sample_stats)
         outpath = os.path.join(args.out, sample+'.json')
         out = open(outpath, 'w')
         out.write(json.dumps(sample_stats, sort_keys=True, indent=4))
@@ -176,6 +176,14 @@ class vcf_stats:
             raise VCFInputError("Cannot find location of GT in format: "+\
                              format_string)
         return index
+
+    def get_sample_name(self, sample_stats):
+        """Get the sample name, from that sample's stats list entry"""
+        return sample_stats[self.SAMPLE_KEY]
+
+    def get_sample_stats(self):
+        """Return the stats list, for subsequent processing and output"""
+        return self.stats
 
     def init_ethnicity_loglik(self, name):
         """initialise an empty data structure with the sample name
