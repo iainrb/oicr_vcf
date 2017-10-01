@@ -37,7 +37,10 @@ def main():
     else:
         infile = open(args.infile, 'r')
 
-    vcf = vcf_stats(infile, args.verbose)
+    if args.ethnicity: find_ethnicity = True
+    else: find_ethnicity = False
+
+    vcf = vcf_stats(infile, args.verbose, find_ethnicity)
 
     if args.infile != '-':
         infile.close()
@@ -75,10 +78,13 @@ class vcf_stats:
     AFR_KEY = 'AFR'
     EUR_KEY = 'EUR'
     
-    def __init__(self, infile, verbose):
-        """Constructor. infile must be a file object; verbose is Boolean"""
+    def __init__(self, infile, verbose, enable_ethnicity):
+        """Constructor.
+
+        infile must be a file object; verbose & find_ethnicity are Boolean"""
         self.verbose = verbose
-        self.buffer_size = 10 * 10**6 # input buffer size, in bytes
+        self.enable_ethnicity = enable_ethnicity
+        self.buffer_size = 50 * 10**6 # input buffer size, in bytes
         self.total_fields = None
         self.total_samples = None
         self.sample_names = []
@@ -108,6 +114,9 @@ class vcf_stats:
         # * Pr(D) = normalizing constant
         # * Pr(H|D) = (Pr(D|H)Pr(H)) / Pr(D)
 
+        if self.enable_ethnicity == False:
+            raise RunTimeError("Ethnicity calculation is not enabled\n")
+
         prior = {
             self.ASN_KEY: 0.25,
             self.AMR_KEY: 0.25,
@@ -130,7 +139,6 @@ class vcf_stats:
                 pr_h = Decimal(prior[key])
                 pr_h_d = pr_d_h * pr_h
                 msg = "\t"+str(pr_d_h)+"\n"
-                sys.stderr.write(msg)
                 sample_output[key] = pr_h_d
             # normalize probabilities so they sum to 1
             total = sum(sample_output.values())
@@ -260,8 +268,9 @@ class vcf_stats:
         for i in range(self.total_samples):
             sample_stats = self.init_sample_stats(self.sample_names[i])
             self.stats.append(sample_stats)
-            eth_stats = self.init_ethnicity_loglik(self.sample_names[i])
-            self.ethnicity_loglik.append(eth_stats)
+            if self.enable_ethnicity:
+                eth_stats = self.init_ethnicity_loglik(self.sample_names[i])
+                self.ethnicity_loglik.append(eth_stats)
         if self.verbose:
             sys.stderr.write("Read "+str(len(meta_lines))+\
                              " lines in VCF metadata\n")
@@ -269,19 +278,19 @@ class vcf_stats:
                              " sample names from VCF header\n")
         # read VCF body in chunks
         line_count = 0
-        chunk_count = 0
+        block_count = 0
         while True:
             lines = infile.readlines(self.buffer_size)
             if lines == []: break
-            chunk_count += 1
+            block_count += 1
             for line in lines:
                 line_count += 1
                 (ref, alts, genotypes, info) = self.parse_body_line(line)
                 self.update_stats(ref, alts, genotypes, info)
         if self.verbose:
-            sys.stderr.write("Read "+str(line_count)+" lines from VCF body")
-            sys.stderr.write(" in "+str(chunk_count)+" chunk(s).\n")
-
+            sys.stderr.write("Read "+str(line_count)+" lines from VCF body"+\
+                             " in "+str(block_count)+" block(s) of maximum "+\
+                             str(self.buffer_size)+" bytes.\n")
         # update with transition/transversion ratios
         self.update_sample_titv()     
         return True
@@ -300,7 +309,10 @@ class vcf_stats:
             raise VCFInputError(msg)
         ref = fields[3]
         alts = re.split(',', fields[4])
-        info = self.parse_info(fields[7])
+        if self.enable_ethnicity:
+            info = self.parse_info(fields[7])
+        else:
+            info = {}
         gt_index = self.find_gt_index(fields[8])
         genotypes = [None]*self.total_samples
         for i in range(self.total_samples):
@@ -412,13 +424,15 @@ class vcf_stats:
             # eg. SNP on one chromosome and indel on the other
             variant_index = None
             for allele_value in gt: # for each chromosome
+                if self.update_ethnicity:
+                    if allele_value == '.':
+                        pass
+                    elif allele_value == '0':
+                        self.update_ethnicity(i, False, info)
+                    else:
+                        self.update_ethnicity(i, True, info)
                 # ignore '0' for reference, or '.' for no call
-                if allele_value == '.':
-                    pass
-                elif allele_value == '0':
-                    self.update_ethnicity(i, False, info)
-                else:
-                    self.update_ethnicity(i, True, info)
+                if allele_value != '.' and allele_value != '0':
                     alt_index = int(allele_value) - 1
                     if variant_index != None and variant_index != alt_index:
                         msg = "Non-matching variant types not supported"
