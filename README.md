@@ -42,7 +42,7 @@ The optional `-e` or `--ethnicity` argument is a JSON path for output of estimat
 
 See the file `doc/ethnicity.md` for details of the ethnicity estimation.
 
-Run with `-h` or `--help` for more information:
+Run with `-h` or `--help` for more usage information:
 
     ./vcf_stats.py --help
 
