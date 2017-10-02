@@ -380,9 +380,12 @@ class vcf_stats:
         af_keys = ('AMR_AF', 'ASN_AF', 'AFR_AF', 'EUR_AF')
         info = {}
         for field in fields:
-            (key, value) = re.split('=', field)
-            if key in af_keys:
-                info[key] = float(value)
+            try:
+                (key, value) = re.split('=', field)
+                if key in af_keys:
+                    info[key] = float(value)
+            except ValueError: # eg. no = sign in field
+                continue
         return info
     
     def update_sample_titv(self):
@@ -439,7 +442,7 @@ class vcf_stats:
             # find which type of variant is present
             # does not support multiple variant types in same genotype,
             # eg. SNP on one chromosome and indel on the other
-            variant_index = None
+            variants = set()
             for allele_value in gt: # for each chromosome
                 if self.update_ethnicity:
                     if allele_value == '.':
@@ -451,16 +454,14 @@ class vcf_stats:
                 # ignore '0' for reference, or '.' for no call
                 if allele_value != '.' and allele_value != '0':
                     alt_index = int(allele_value) - 1
-                    if variant_index != None and variant_index != alt_index:
-                        msg = "Non-matching variant types not supported"
-                        raise VCFInputError(msg)
-                    variant_index = alt_index
+                    variants.add(alt_index)
                     if alt_types[alt_index] == 0: # SNP
                         alt = alts[alt_index]
                         self.stats[i][self.SNPS_KEY][ref][alt] += 1
-            # each variant is counted only once in the variant total
+            # each variant type is counted only once in the variant total
             # eg. homozygous SNP (two alternate alleles) is not double-counted
-            if variant_index != None:
+            # however a SNP and indel at same position are counted separately
+            for variant_index in variants:
                 vartype = alt_types[variant_index]
                 self.stats[i][self.VARIANT_COUNT_KEY] += 1
                 if vartype == 1 or vartype == 2:
