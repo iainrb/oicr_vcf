@@ -60,7 +60,8 @@ def construct_argument_parser():
                     help='Directory path for JSON output; defaults to '+\
                     'current working directory. Output filenames are of '+\
                     'the form: ${SAMPLE_NAME}.json')
-    ap.add_argument('-e', '--ethnicity', help='Path for output JSON file '+\
+    ap.add_argument('-e', '--ethnicity', metavar='PATH',
+                    help='Path for output JSON file '+\
                     'containing estimated likelihood of '+\
                     'ethnicities. Optional.')
     ap.add_argument('-v', '--verbose', action='store_true',
