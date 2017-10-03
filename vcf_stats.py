@@ -83,6 +83,11 @@ class vcf_stats:
     AMR_KEY = 'AMR'
     AFR_KEY = 'AFR'
     EUR_KEY = 'EUR'
+    # variant_type constants
+    VT_KEY = 'VT'
+    VT_SNP = 'SNP'
+    VT_INDEL = 'INDEL'
+    VT_SV = 'SV'
     
     def __init__(self, infile, verbose, enable_ethnicity):
         """Constructor.
@@ -148,7 +153,6 @@ class vcf_stats:
                 pr_d_h = e**Decimal(eth_loglik[key])
                 pr_h = Decimal(prior[key])
                 pr_h_d = pr_d_h * pr_h
-                msg = "\t"+str(pr_d_h)+"\n"
                 sample_output[key] = pr_h_d
             # normalize probabilities so they sum to 1
             total = sum(sample_output.values())
@@ -327,10 +331,7 @@ class vcf_stats:
             raise VCFInputError(msg)
         ref = fields[3]
         alts = re.split(',', fields[4])
-        if self.enable_ethnicity:
-            info = self.parse_info(fields[7])
-        else:
-            info = {}
+        info = self.parse_info(fields[7])
         gt_index = self.find_gt_index(fields[8])
         genotypes = [None]*self.total_samples
         for i in range(self.total_samples):
@@ -360,11 +361,8 @@ class vcf_stats:
         Sample field consists of one or more colon-delimited sub-fields.
         Legal values for the genotype sub-field:
         0,1,. separated by | or /"""
-        permitted_gt = ('0', '1', '.')
         gt_string = re.split(':', input_string)[gt_index]
         genotypes = re.split("[|/]", gt_string)
-        if len(genotypes) >= 3:
-            raise VCFInputError("Polyploid genotypes not supported")
         for gt in genotypes:
             if re.match('<.*>', gt):
                 raise VCFInputError("ID string for alternate not supported")
@@ -376,17 +374,29 @@ class vcf_stats:
         return genotypes
 
     def parse_info(self, info_string):
-        """Parse the INFO field in VCF body; get allele frequencies"""
+        """Parse the INFO field for allele frequencies and variant type"""
         fields = re.split(';', info_string)
         af_keys = ('AMR_AF', 'ASN_AF', 'AFR_AF', 'EUR_AF')
         info = {}
+        vt = None
+        permitted_vt = (self.VT_SNP, self.VT_INDEL, self.VT_SV)
         for field in fields:
             try:
                 (key, value) = re.split('=', field)
                 if key in af_keys:
                     info[key] = float(value)
+                elif key == self.VT_KEY:
+                    vt = value
             except ValueError: # eg. no = sign in field
                 continue
+        if vt == None:
+            msg = 'Variant type not found in INFO column: '+info_string
+            raise VCFInputError(msg)
+        elif vt not in permitted_vt:
+            msg = 'Unknown variant type, not in: '+str(permitted_vt)
+            raise VCFInputError(msg)
+        else:
+            info[self.VT_KEY] = vt
         return info
     
     def update_sample_titv(self):
@@ -407,6 +417,7 @@ class vcf_stats:
             # correction for very high/low allele frequency
             # VCF INFO field is only precise to 2 d.p.
             # so 1.0 has the same representation as 0.995
+            if key == self.VT_KEY: continue
             af = info[key]
             delta = 0.0001
             if math.fabs(1.0 - af) < delta: af = 0.995
@@ -421,6 +432,7 @@ class vcf_stats:
     def update_stats(self, ref, alts, genotypes, info):
         """Update running totals for all samples, for a given VCF line
 
+        Gets variant type from the 'info' argument
         Also updates ethnicity log-likelihood totals, using 'info' argument
         """
         # classify alterantes as SNP, indel, or structural variant
@@ -445,7 +457,7 @@ class vcf_stats:
             # eg. SNP on one chromosome and indel on the other
             variants = set()
             for allele_value in gt: # for each chromosome
-                if self.update_ethnicity:
+                if self.enable_ethnicity:
                     if allele_value == '.':
                         pass
                     elif allele_value == '0':
@@ -459,16 +471,12 @@ class vcf_stats:
                     if alt_types[alt_index] == 0: # SNP
                         alt = alts[alt_index]
                         self.stats[i][self.SNPS_KEY][ref][alt] += 1
-            # each variant type is counted only once in the variant total
-            # eg. homozygous SNP (two alternate alleles) is not double-counted
-            # however a SNP and indel at same position are counted separately
-            for variant_index in variants:
-                vartype = alt_types[variant_index]
-                self.stats[i][self.VARIANT_COUNT_KEY] += 1
-                if vartype == 1 or vartype == 2:
-                     self.stats[i][self.INDEL_COUNT_KEY] += 1
-                elif vartype == 3:
-                     self.stats[i][self.SV_COUNT_KEY] += 1
+                    self.stats[i][self.VARIANT_COUNT_KEY] += 1
+                    vt = info[self.VT_KEY]
+                    if vt == self.VT_INDEL:
+                        self.stats[i][self.INDEL_COUNT_KEY] += 1
+                    elif vt == self.VT_SV:
+                        self.stats[i][self.SV_COUNT_KEY] += 1
             i += 1
 
     def titv(self, sample_stats):
